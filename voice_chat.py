@@ -6,14 +6,15 @@ import whisper
 import os
 import pyttsx3
 import chromadb
-from sentence_transformers import SentenceTransformer
 import uuid
 from textblob import TextBlob
 import keyboard
 import webbrowser
 
-# --- FFMPEG PATH FIX ---
-os.environ['PATH'] = r'C:\Users\O M E N\Downloads\ffmpeg-2025-07-17-git-bc8d06d541-essentials_build\bin' + os.pathsep + os.environ['PATH']
+# --- FFMPEG (needed by Whisper) ---
+# If ffmpeg isn't on your PATH, set FFMPEG_DIR to the folder that contains ffmpeg.exe
+if os.environ.get("FFMPEG_DIR"):
+    os.environ['PATH'] = os.environ["FFMPEG_DIR"] + os.pathsep + os.environ['PATH']
 
 # --- Configuration ---
 RATE = 44100
@@ -24,7 +25,6 @@ WAVE_OUTPUT_FILENAME = "temp_recording.wav"
 PUSH_TO_TALK_KEY = "right ctrl"
 
 # --- AI TOOLBOX DEFINITION ---
-# (All your tool functions like open_spotify, open_gmail, etc., remain here unchanged)
 def open_spotify(emotion="neutral"):
     speak(f"Since you're feeling {emotion}, I'll play some music for you.")
     playlists = { "positive": "spotify:playlist:37i9dQZF1DXdPec7aJc1u6", "negative": "spotify:playlist:37i9dQZF1DX3rxVfibe1L0", "neutral": "spotify:playlist:37i9dQZEVXbNG2KDcFcKOF" }
@@ -47,23 +47,23 @@ def open_google():
     speak("Opening Google."); webbrowser.open('https://www.google.com'); return "Google is ready for your search."
 available_tools = { "open_spotify": open_spotify, "open_gmail": open_gmail, "open_youtube": open_youtube, "open_calculator": open_calculator, "open_notepad": open_notepad, "open_cmd": open_cmd, "open_explorer": open_explorer, "open_google": open_google, }
 
-# --- Load Models & Other Functions ---
-# (All other functions like load_model, record_audio_ptt, speak, etc., remain here unchanged)
+# --- Load Models ---
 print("Loading all AI models. This may take a moment...")
 whisper_model = whisper.load_model("base")
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 print("All models loaded.")
+# Memory: ChromaDB embeds text with its built-in all-MiniLM-L6-v2 model
 client = chromadb.PersistentClient(path="./memory_db") 
 collection = client.get_or_create_collection(name="memory")
 def record_audio_ptt():
-    p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
     print(f"--- Press and hold the '{PUSH_TO_TALK_KEY}' key to speak ---")
     keyboard.wait(PUSH_TO_TALK_KEY)
+    # Open the mic only while the key is held (avoids a buffer overflow while waiting)
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
     print("Listening...")
     frames = []
     while keyboard.is_pressed(PUSH_TO_TALK_KEY):
-        data = stream.read(CHUNK)
+        data = stream.read(CHUNK, exception_on_overflow=False)
         frames.append(data)
     print("Recording finished.")
     stream.stop_stream(); stream.close(); p.terminate()
